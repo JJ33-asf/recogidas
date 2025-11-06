@@ -1,0 +1,172 @@
+{% set active = active or 'buscar' %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>GLS Molina 2003 Recogidas</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Poppins', sans-serif; background: radial-gradient(circle at 20% 30%, #0a162b 0%, #000000 90%); color: #e8f0ff; margin: 0; }
+    header {
+      position: fixed; top: 0; left: 0; right: 0;
+      backdrop-filter: blur(10px);
+      background: rgba(15, 25, 40, 0.75);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 40px; height: 60px; z-index: 50;
+    }
+    .menu {
+      display: flex; gap: 30px;
+    }
+    header a {
+      color: #9fbfff; text-decoration: none; font-weight: 600;
+      transition: 0.3s; padding: 8px 14px; border-radius: 8px;
+    }
+    header a:hover { color: #00e0ff; }
+    header a.active { background: rgba(0,224,255,0.1); color: #00e0ff; box-shadow: 0 0 10px rgba(0,224,255,0.2); }
+
+    #clock {
+      font-weight: 600;
+      font-size: 14px;
+      color: #00e0ff;
+      letter-spacing: 0.5px;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 100px auto 60px;
+      background: rgba(20,25,40,0.75);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 20px;
+      padding: 24px;
+      backdrop-filter: blur(14px);
+      box-shadow: 0 0 30px rgba(0,192,255,0.15);
+    }
+
+    h2 {
+      font-weight: 700;
+      font-size: 28px;
+      color: #00e0ff;
+      text-shadow: 0 0 10px rgba(0,224,255,0.3);
+      margin-top: 0;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid #2b3550;
+      background: rgba(255,255,255,0.05);
+      color: #e7eaf3;
+      margin-bottom: 10px;
+    }
+
+    .btn { cursor: pointer; border: 0; border-radius: 10px; padding: 10px 14px; background: linear-gradient(90deg, #005BBB, #00e0ff); color: white; font-weight: 600; margin-right: 6px; text-decoration:none; }
+    .btn.secondary { background: rgba(255,255,255,0.1); color: #e7eaf3; }
+
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px; }
+    th, td { border-bottom: 1px solid rgba(255,255,255,0.05); padding: 10px; text-align: left; }
+    th { color: #9fb2ff; }
+    tr:hover { background: rgba(0,224,255,0.05); }
+    .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; background: rgba(0,224,255,0.12); border:1px solid rgba(0,224,255,0.25); color: #00e0ff; }
+
+    #placeholder { text-align: center; color: #7d8cae; padding: 40px 0; font-style: italic; }
+    #map { margin-top: 20px; width: 100%; height: 500px; border-radius: 16px; overflow: hidden; box-shadow: 0 0 40px rgba(0,224,255,0.2); display: none; transition: all 0.3s ease-in-out; }
+    iframe { width: 100%; height: 100%; border: 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="menu">
+      <a href="/" class="{% if active == 'buscar' %}active{% endif %}">🔍 Buscar</a>
+      <a href="/todas" class="{% if active == 'todas' %}active{% endif %}">📋 Todas</a>
+    </div>
+    <div id="clock">--:--:--</div>
+  </header>
+
+  <div class="container">
+    <h2>GLS Molina 2003 Recogidas</h2>
+    <input id="q" type="text" placeholder="Buscar por calle, cliente o CP…" oninput="doSearch()" />
+    <button class="btn" onclick="document.getElementById('file').click()">📁 Subir Excel</button>
+    <input id="file" type="file" accept=".xlsx" style="display:none" onchange="uploadExcel(event)" />
+    <button class="btn secondary" onclick="clearData()">🧹 Limpiar</button>
+    <a class="btn secondary" href="/api/export">⬇️ Exportar CSV</a>
+
+    <div id="status" style="margin-top:10px;color:#9aa4c0;"></div>
+    <div id="placeholder">🔍 Escribe algo para buscar una recogida</div>
+    <div id="map"></div>
+
+    <table id="results" style="display:none;">
+      <thead>
+        <tr>
+          <th>Cliente</th><th>Dirección</th><th>Población</th><th>CP</th><th>Cod. Rep</th><th>Repartidor</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <script>
+    const qInput=document.getElementById('q');
+    const statusEl=document.getElementById('status');
+    const tbody=document.querySelector('#results tbody');
+    const resultsTable=document.getElementById('results');
+    const placeholder=document.getElementById('placeholder');
+    const mapDiv=document.getElementById('map');
+    const clock=document.getElementById('clock');
+
+    function updateClock(){
+      const now=new Date();
+      const days=["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
+      clock.textContent=`${days[now.getDay()]}, ${now.toLocaleDateString('es-ES')} — ${now.toLocaleTimeString('es-ES')}`;
+    }
+    setInterval(updateClock,1000);
+    updateClock();
+
+    async function uploadExcel(ev){
+      const f=ev.target.files[0]; if(!f)return;
+      statusEl.textContent='Subiendo...';
+      const form=new FormData(); form.append('file',f);
+      const res=await fetch('/api/upload',{method:'POST',body:form});
+      const data=await res.json();
+      statusEl.textContent=data.ok?`Importadas ${data.inserted} filas.`:`Error: ${data.error}`;
+      ev.target.value=''; tbody.innerHTML=''; resultsTable.style.display='none'; placeholder.style.display='block'; mapDiv.style.display='none';
+    }
+
+    async function clearData(){
+      if(!confirm('¿Borrar todo?'))return;
+      await fetch('/api/clear',{method:'POST'});
+      statusEl.textContent='Datos borrados.'; tbody.innerHTML=''; resultsTable.style.display='none'; placeholder.style.display='block'; mapDiv.style.display='none';
+    }
+
+    async function doSearch(){
+      const q=qInput.value.trim();
+      if(q===""){tbody.innerHTML='';resultsTable.style.display='none';placeholder.style.display='block';placeholder.textContent='🔍 Escribe algo para buscar una recogida';mapDiv.style.display='none';return;}
+      const res=await fetch('/api/search?q='+encodeURIComponent(q));
+      const data=await res.json(); render(data,q);
+    }
+
+    function render(rows,query){
+      tbody.innerHTML='';
+      if(rows.length===0){
+        resultsTable.style.display='none';
+        placeholder.style.display='block';
+        placeholder.textContent='❌ No se encontraron resultados.';
+        mapDiv.innerHTML=`<iframe loading="lazy" allowfullscreen src="https://www.google.com/maps?q=${encodeURIComponent(query)}&output=embed"></iframe>`;
+        mapDiv.style.display='block'; return;
+      }
+      mapDiv.style.display='none';
+      for(const r of rows){
+        const tr=document.createElement('tr');
+        tr.innerHTML=`<td>${r.nombre}</td><td>${r.direccion}</td><td>${r.poblacion}</td><td>${r.cp}</td><td><span class="pill">${r.cod_repartidor||''}</span></td><td>${r.nombre_repartidor}</td>`;
+        tbody.appendChild(tr);
+      }
+      resultsTable.style.display='table'; placeholder.style.display='none';
+    }
+  </script>
+</body>
+</html>
+
+
+
